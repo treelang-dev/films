@@ -8,7 +8,7 @@ material = "1.10.0"
 constraintlayout = "2.1.4"
 navigationFragment = "2.6.0"
 navigationUi = "2.6.0"
-poiOoxml = "5.4.1"
+poiOoxml = "5.5.1"
 
 [libraries]
 junit = { group = "junit", name = "junit", version.ref = "junit" }

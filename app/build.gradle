@@ -11,12 +11,24 @@ android {
         applicationId = "com.treelang.films"
         minSdk = 28
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 251204
+        versionName = "1.0.1"
+    }
+        
+    signingConfigs {
+        release {
+            if (System.getenv("CI") != null) {
+                storeFile file("../keystore-repo/keystore.jks")
+                storePassword System.getenv("ANDROID_KEY_STORE_PASSWORD")
+                keyAlias System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled = false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }

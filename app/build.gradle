@@ -41,14 +41,6 @@ android {
 }
 
 dependencies {
-
-//    implementation libs.appcompat
-//    implementation libs.material
-//    implementation libs.constraintlayout
-//    implementation libs.navigation.fragment
-//    implementation libs.navigation.ui
-//    testImplementation libs.junit
-//    androidTestImplementation libs.ext.junit
-//    androidTestImplementation libs.espresso.core
-    implementation libs.poi.ooxml
+    implementation 'com.squareup.okhttp3:okhttp:4.10.0'
+    implementation 'org.jsoup:jsoup:1.15.3'
 }

@@ -3,48 +3,120 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:layout_marginStart="16dp"
-    android:layout_marginEnd="16dp"
-    android:fitsSystemWindows="true">
+    android:fitsSystemWindows="true"
+    android:layout_margin="16dp"
+    android:padding="16dp">
 
-    <EditText
-        android:id="@+id/fcodeEditText"
+    <!-- 输入框容器 -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:layout_marginBottom="24dp"
-        android:inputType="text"
-        android:singleLine="true"
-        android:hint="请输入fcode"
-        android:text="2KURVKP557S" />
+        android:layout_marginTop="12dp"
+        android:orientation="horizontal"
+        android:padding="4dp">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Activity ID"
+                android:textSize="10sp"
+                android:textColor="#888888"/>
+            <EditText
+                android:id="@+id/activityIdEditText"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:text="1714655"
+                android:inputType="number"
+                android:padding="4dp"/>
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="FCode"
+                android:textSize="10sp"
+                android:textColor="#888888"/>
+            <EditText
+                android:id="@+id/fcodeEditText"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:text="2CRGVWAC799"
+                android:padding="4dp"/>
+        </LinearLayout>
+    </LinearLayout>
 
     <Button
         android:id="@+id/startButton"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:text="Start Scraping"/>
-
-    <TextView
-        android:id="@+id/statusTextView"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:text="Status: Idle"/>
+        android:layout_height="56dp"
+        android:layout_marginTop="12dp"
+        android:text="开始抓取"
+        android:textStyle="bold"/>
 
     <ProgressBar
         android:id="@+id/progressBar"
         style="?android:attr/progressBarStyleHorizontal"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:indeterminate="false"
-        android:visibility="gone" />
+        android:layout_marginTop="10dp" />
 
-    <WebView
-        android:id="@+id/webView"
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:visibility="gone" />
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="8dp">
+
+        <TextView
+            android:id="@+id/progressText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="就绪 0/0"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/tvWorkerStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="线程: 0"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <!-- 日志区域 -->
+    <ScrollView
+        android:id="@+id/logScrollView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="36dp"
+        android:padding="8dp">
+
+        <TextView
+            android:id="@+id/logTextView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="System Log\n\n"
+            android:textSize="11sp"
+            android:fontFamily="monospace"
+            android:textColor="#4CAF50" />
+    </ScrollView>
+
+    <!-- 隐藏的 WebView 容器 (保留原逻辑，不设为GONE) -->
+    <LinearLayout
+        android:id="@+id/webViewContainer"
+        android:layout_width="1dp"
+        android:layout_height="1dp"
+        android:orientation="vertical"
+        android:visibility="invisible" />
 
 </LinearLayout>

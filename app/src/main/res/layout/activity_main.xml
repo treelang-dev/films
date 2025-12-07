@@ -101,7 +101,7 @@
             android:id="@+id/logTextView"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Ready..."
+            android:text="Ready...\n"
             android:fontFamily="monospace"
             android:textSize="10sp" />
     </ScrollView>

@@ -11,7 +11,7 @@ android {
         applicationId = "com.treelang.films"
         minSdk = 28
         targetSdk = 36
-        versionCode = 251204
+        versionCode = 251207
         versionName = "1.0.1"
     }
         
@@ -41,6 +41,5 @@ android {
 }
 
 dependencies {
-    implementation 'com.squareup.okhttp3:okhttp:4.10.0'
-    implementation 'org.jsoup:jsoup:1.15.3'
+    //
 }

@@ -2,12 +2,16 @@ package com.treelang.films;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
@@ -21,7 +25,6 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
-import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -59,29 +62,25 @@ public class MainActivity extends Activity {
     private static final String URL_TEMPLATE = "https://m.taopiaopiao.com/movies/coupons/applicative-cinemas.html?activityid=%s&fcode=%s&citycode=%s&cityname=%s";
 
     // === Core Configuration ===
-    private static final long WORKER_TIMEOUT_MS = 10000; // Timeout per city
+    private static final long WORKER_TIMEOUT_MS = 10000;
     private static final int MAX_RETRY_COUNT = 3;
     private static final int DEFAULT_THREADS = 4;
     private static final int MAX_THREADS = 4;
 
     // === UI Components ===
     private EditText fcodeEditText, activityIdEditText;
-    private TextView logTextView, progressText, tvWorkerStatus, threadCountText;
+    private TextView logTextView, progressText, tvWorkerStatus;
     private ScrollView logScrollView;
-    private Button startButton, btnClearCache;
+    private Button startButton;
     private ProgressBar progressBar;
     private LinearLayout webViewContainer;
-    private SeekBar threadSeekBar;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
 
     // === Data Structures ===
-    // Thread-safe queue for cities to be processed
     private final Queue<City> cityQueue = new ConcurrentLinkedQueue<>();
     private final List<WebViewWrapper> webViewPool = new ArrayList<>();
-
-    // Tracking sets
     private final Set<String> processedCityCodes = new HashSet<>();
     private Set<String> finishedCityCodes = new HashSet<>();
     private final List<City> failedCities = new ArrayList<>();
@@ -102,22 +101,66 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // Keep screen on to prevent sleeping during long scrapes
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         setContentView(R.layout.activity_main);
 
         initViews();
         loadConfig();
-        log("[System] Deep Optimization Ready (MutationObserver + Fast Intercept)");
+        log("[System] Threads: " + currentThreadCount);
     }
 
     @Override
     protected void onDestroy() {
-        // Critical: Clean up WebViews to prevent memory leaks
         stopScraping();
         destroyWebViewPool();
         super.onDestroy();
     }
+
+    // === Menu Implementation ===
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        getMenuInflater().inflate(R.menu.menu_main, menu);
+        return true;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        if (item.getItemId() == R.id.action_threads) {
+            showThreadSelectionDialog();
+            return true;
+        }
+        return super.onOptionsItemSelected(item);
+    }
+
+    private void showThreadSelectionDialog() {
+        final String[] options = new String[MAX_THREADS];
+        for (int i = 0; i < MAX_THREADS; i++) {
+            options[i] = String.valueOf(i + 1);
+        }
+
+        int currentSelectionIndex = Math.max(0, Math.min(currentThreadCount - 1, MAX_THREADS - 1));
+        final int[] tempSelection = {currentSelectionIndex};
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Select Thread Count");
+
+        builder.setSingleChoiceItems(options, currentSelectionIndex, (dialog, which) -> tempSelection[0] = which);
+
+        builder.setPositiveButton("Confirm", (dialog, which) -> {
+            int selectedCount = tempSelection[0] + 1;
+            if (currentThreadCount != selectedCount) {
+                currentThreadCount = selectedCount;
+                saveConfig();
+                log("[System] Thread count set to " + currentThreadCount + " (Applied on next Start)");
+            }
+        });
+
+        builder.setNegativeButton("Cancel", (dialog, which) -> dialog.dismiss());
+        builder.show();
+    }
+
+    // === End Menu Implementation ===
 
     private void destroyWebViewPool() {
         if (webViewContainer != null) {
@@ -145,22 +188,6 @@ public class MainActivity extends Activity {
         progressBar = findViewById(R.id.progressBar);
         startButton = findViewById(R.id.startButton);
         webViewContainer = findViewById(R.id.webViewContainer);
-        threadSeekBar = findViewById(R.id.threadSeekBar);
-        threadCountText = findViewById(R.id.threadCountText);
-        btnClearCache = findViewById(R.id.btnClearCache);
-
-        threadSeekBar.setMax(MAX_THREADS);
-        threadSeekBar.setMin(1);
-        threadSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                int val = Math.max(progress, 1);
-                currentThreadCount = val;
-                threadCountText.setText(String.valueOf(val));
-            }
-            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
-            @Override public void onStopTrackingTouch(SeekBar seekBar) {}
-        });
 
         startButton.setOnClickListener(v -> {
             if (isScrapingData || isScrapingCities) {
@@ -171,27 +198,15 @@ public class MainActivity extends Activity {
                 startStep1_GetCities();
             }
         });
-
-        btnClearCache.setOnClickListener(v -> {
-            SharedPreferences sp = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-            sp.edit().remove("finished_cities").apply();
-            finishedCityCodes.clear();
-            log("[System] Cache cleared");
-            Toast.makeText(this, "Records cleared", Toast.LENGTH_SHORT).show();
-        });
     }
 
     private void rebuildWebViewPoolIfNeeded() {
         if (webViewPool.size() == currentThreadCount) return;
-
-        log("[System] Thread : " + webViewPool.size() + " -> " + currentThreadCount);
-
+        log("[System] Rebuilding pool: " + webViewPool.size() + " -> " + currentThreadCount);
         destroyWebViewPool();
-
         for (int i = 0; i < currentThreadCount; i++) {
             WebView wv = new WebView(getApplicationContext());
             wv.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
-
             setupWebViewSettings(wv, i);
             webViewContainer.addView(wv);
             webViewPool.add(new WebViewWrapper(wv, i));
@@ -203,44 +218,33 @@ public class MainActivity extends Activity {
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
-
-        // Optimization: Block heavy resources
         settings.setBlockNetworkImage(true);
         settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
         settings.setGeolocationEnabled(false);
         settings.setMediaPlaybackRequiresUserGesture(false);
-
         webView.addJavascriptInterface(new JsBridge(index), "Android");
-
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 if ("about:blank".equals(url)) return;
-
                 if (index == 0 && isScrapingCities) {
                     injectCityListScript(view);
                 } else if (isScrapingData) {
-                    // Inject Observer immediately after page load
                     injectCinemaDataScriptFast(view);
                 }
             }
-
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 String url = request.getUrl().toString().toLowerCase();
-
-                // Optimization: Aggressive interception of non-essential resources
-                if (url.endsWith(".css") || url.endsWith(".woff") ||
-                        url.endsWith(".ttf") || url.endsWith(".ico") ||
-                        url.endsWith(".png") || url.endsWith(".jpg") || url.endsWith(".gif")) {
-                    return new WebResourceResponse("text/plain", "utf-8", new ByteArrayInputStream("".getBytes()));
-                }
-
+//                if (url.endsWith(".css") || url.endsWith(".woff") ||
+//                        url.endsWith(".ttf") || url.endsWith(".ico") ||
+//                        url.endsWith(".png") || url.endsWith(".jpg") || url.endsWith(".gif")) {
+//                    return new WebResourceResponse("text/plain", "utf-8", new ByteArrayInputStream("".getBytes()));
+//                }
                 if (url.contains("m.taopiaopiao.com") || url.contains("g.alicdn.com")) {
                     return super.shouldInterceptRequest(view, request);
                 }
-
                 return new WebResourceResponse("text/plain", "utf-8", new ByteArrayInputStream("".getBytes()));
             }
         });
@@ -256,15 +260,27 @@ public class MainActivity extends Activity {
             return;
         }
 
+        // 彻底清理旧数据，防止状态残留
+        processedCount.set(0);
+        successRecordCount.set(0);
+        activeWorkers.set(0);
+        finishedCityCodes.clear();
+        processedCityCodes.clear();
+        failedCities.clear();
+
+        // 既然是全新开始，也要清除 SharedPreferences 里的记录
+        SharedPreferences sp = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        sp.edit().remove("finished_cities").apply();
+
         isScrapingCities = true;
         isScrapingData = false;
-        startButton.setText("Stop Task");
+
+        startButton.setText("Finish");
         log(">>> [Step 1] Fetching city list...");
 
         android.webkit.CookieManager.getInstance().removeAllCookies(null);
 
         try {
-            // Default to Guangzhou for initial city loading
             String url = String.format(URL_TEMPLATE, actId, fcode, "440100", URLEncoder.encode("广州", "UTF-8"));
             if (!webViewPool.isEmpty()) {
                 webViewPool.get(0).webView.loadUrl(url);
@@ -278,7 +294,7 @@ public class MainActivity extends Activity {
         try {
             tempCsvFile = new File(getCacheDir(), "cinemas_temp.csv");
             FileOutputStream fos = new FileOutputStream(tempCsvFile);
-            fos.write(0xef); fos.write(0xbb); fos.write(0xbf); // Write BOM for Excel compatibility
+            fos.write(0xef); fos.write(0xbb); fos.write(0xbf); // Write BOM
             csvWriter = new BufferedWriter(new OutputStreamWriter(fos, StandardCharsets.UTF_8));
             csvWriter.write("City,Cinema Name,Address\n");
         } catch (IOException e) {
@@ -286,13 +302,12 @@ public class MainActivity extends Activity {
             return;
         }
 
-        loadFinishedCities();
+        // 注意：这里不需要再调用 loadFinishedCities()，因为点击开始时已经决定是全新开始了
+        // 但为了代码的健壮性（防止逻辑修改），如果用户没点Start而是其他途径进来，这里保留逻辑，但前面已经清空了
         cityQueue.clear();
-        processedCityCodes.clear();
-        failedCities.clear();
 
-        // Filter out already processed cities
         for (City c : cities) {
+            // 如果 finishedCityCodes 是空的（因为被清除了），这里就会把所有城市都加进去
             if (finishedCityCodes.contains(c.code)) continue;
             if (!processedCityCodes.contains(c.code)) {
                 cityQueue.add(c);
@@ -303,9 +318,6 @@ public class MainActivity extends Activity {
         isScrapingCities = false;
         isScrapingData = true;
         totalCities = cityQueue.size();
-        processedCount.set(0);
-        successRecordCount.set(0);
-        activeWorkers.set(0);
 
         progressBar.setMax(totalCities);
         updateProgressUI();
@@ -313,11 +325,11 @@ public class MainActivity extends Activity {
         log(">>> [Step 2] Starting " + currentThreadCount + " threads, Tasks: " + totalCities);
 
         if (totalCities == 0) {
-            log("[System] All cities already completed!");
+            log("[System] No cities to process.");
             finishScraping();
             return;
         }
-        // Distribute initial tasks to all workers
+
         for (WebViewWrapper wrapper : webViewPool) {
             if (!wrapper.isBusy) {
                 assignTaskToWrapper(wrapper);
@@ -330,7 +342,6 @@ public class MainActivity extends Activity {
 
         final City city = cityQueue.poll();
         if (city == null) {
-            // No more tasks, wait for other workers or finish
             if (activeWorkers.get() == 0) finishScraping();
             return;
         }
@@ -340,14 +351,13 @@ public class MainActivity extends Activity {
         activeWorkers.incrementAndGet();
         updateWorkerUI();
 
-        // Runnable to handle timeouts
         wrapper.timeoutRunnable = () -> {
             log("[T" + wrapper.index + "] [Timeout] " + city.name);
             wrapper.webView.stopLoading();
 
             if (city.retryCount < MAX_RETRY_COUNT) {
                 city.retryCount++;
-                cityQueue.add(city); // Re-queue
+                cityQueue.add(city);
             } else {
                 failedCities.add(city);
             }
@@ -361,9 +371,7 @@ public class MainActivity extends Activity {
             String actId = activityIdEditText.getText().toString().trim();
             String encodedName = URLEncoder.encode(city.name, "UTF-8");
             final String targetUrl = String.format(URL_TEMPLATE, actId, fcode, city.code, encodedName);
-
             wrapper.webView.loadUrl(targetUrl);
-
         } catch (Exception e) {
             releaseWorker(wrapper);
             assignTaskToWrapper(wrapper);
@@ -394,24 +402,14 @@ public class MainActivity extends Activity {
 
     private void loadConfig() {
         SharedPreferences sp = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-        activityIdEditText.setText(sp.getString("actId", "1714655"));
-        fcodeEditText.setText(sp.getString("fcode", "2CRGVWAC799"));
         currentThreadCount = sp.getInt("threads", DEFAULT_THREADS);
-
         if (currentThreadCount > MAX_THREADS) currentThreadCount = MAX_THREADS;
         if (currentThreadCount < 1) currentThreadCount = 1;
-
-        threadSeekBar.setProgress(currentThreadCount);
-        threadCountText.setText(String.valueOf(currentThreadCount));
-        loadFinishedCities();
-    }
-
-    private void loadFinishedCities() {
-        SharedPreferences sp = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-        finishedCityCodes = new HashSet<>(sp.getStringSet("finished_cities", new HashSet<>()));
     }
 
     private void markCityAsFinished(String code) {
+        // 在新逻辑中，这个仅用于当前运行会话的去重
+        // 因为停止后会清除 Prefs，所以这里即便写入 Prefs，停止时也会被删掉
         if (finishedCityCodes.contains(code)) return;
         finishedCityCodes.add(code);
         SharedPreferences sp = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
@@ -426,7 +424,7 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void onCitiesParsed(final String json) {
-            if(idx != 0) return; // Only the first worker fetches cities
+            if(idx != 0) return;
             mainHandler.post(() -> {
                 try {
                     JSONArray ja = new JSONArray(json);
@@ -453,7 +451,6 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void onDataParsed(final String json) {
             if (!isScrapingData) return;
-
             WebViewWrapper wrapper = webViewPool.get(idx);
             final City city = wrapper.currentCity;
             if (city == null) return;
@@ -493,49 +490,80 @@ public class MainActivity extends Activity {
         try {
             successRecordCount.addAndGet(records.size());
             for (String line : records) {
-                // Escape double quotes for CSV format
                 String safeLine = line.replace("\"", "\"\"");
                 csvWriter.write(cityName + safeLine + "\n");
             }
         } catch (IOException e) { e.printStackTrace(); }
     }
 
+    // 正常完成时调用
     private void finishScraping() {
         if (!isScrapingData) return;
         isScrapingData = false;
-        try {
-            if (csvWriter != null) csvWriter.close();
-        } catch (IOException e) { e.printStackTrace(); }
+        closeCsvWriter();
 
         log(">>> [Task Completed] Total Data: " + successRecordCount.get());
         if (!failedCities.isEmpty()) log(">>> Failed: " + failedCities.size());
 
-        startButton.setText("Start Task");
+        startButton.setText("Start");
         startButton.setEnabled(true);
         saveFileToUserDevice();
     }
 
+    // 用户手动停止时调用 (强制重置)
     private void stopScraping() {
-        log("[System] Task stopped");
+        log("[System] Stopping tasks and cleaning up...");
+
+        // 1. 停止标志位
         isScrapingData = false;
         isScrapingCities = false;
+
+        // 2. 清除 SharedPreferences 中的断点记录
+        SharedPreferences sp = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        sp.edit().remove("finished_cities").apply();
+
+        // 3. 清空内存数据
         cityQueue.clear();
+        finishedCityCodes.clear();
+        processedCityCodes.clear();
+        failedCities.clear();
+
+        // 4. 停止所有 WebView
         for(WebViewWrapper w : webViewPool) {
             if(w.timeoutRunnable != null) mainHandler.removeCallbacks(w.timeoutRunnable);
             if (w.webView != null) w.webView.stopLoading();
             w.isBusy = false;
+            w.currentCity = null;
         }
-        finishScraping();
+
+        // 5. 保存已抓取的数据并导出文件
+        closeCsvWriter();
+
+        // 6. 立即更新 UI
+        mainHandler.post(() -> {
+            startButton.setText("Start");
+            startButton.setEnabled(true);
+            activeWorkers.set(0);
+            updateWorkerUI();
+            log("[System] All tasks was forced to stop and the next start will be a fresh run.");
+            saveFileToUserDevice(); // 导出已抓取的部分
+        });
+    }
+
+    private void closeCsvWriter() {
+        try {
+            if (csvWriter != null) {
+                csvWriter.flush();
+                csvWriter.close();
+                csvWriter = null;
+            }
+        } catch (IOException e) { e.printStackTrace(); }
     }
 
     // ================= Helper Methods =================
 
     private void log(final String msg) {
         mainHandler.post(() -> {
-            // Memory Optimization: Prevent TextView from becoming too large
-            if (logTextView.getText().length() > 5000) {
-                logTextView.setText("");
-            }
             String timestamp = timeFormat.format(new Date());
             logTextView.append("[" + timestamp + "] " + msg + "\n");
             logScrollView.post(() -> logScrollView.fullScroll(View.FOCUS_DOWN));
@@ -553,6 +581,9 @@ public class MainActivity extends Activity {
     }
 
     private void saveFileToUserDevice() {
+        // 如果没有数据，不弹出保存框
+        if (successRecordCount.get() == 0 && !tempCsvFile.exists()) return;
+
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("text/csv");
@@ -572,6 +603,7 @@ public class MainActivity extends Activity {
     private void copyFile(final Uri targetUri) {
         new Thread(() -> {
             try {
+                if (tempCsvFile == null || !tempCsvFile.exists()) return;
                 InputStream in = new FileInputStream(tempCsvFile);
                 OutputStream out = getContentResolver().openOutputStream(targetUri);
                 if (out == null) return;
@@ -589,7 +621,6 @@ public class MainActivity extends Activity {
     // ================= JS Scripts (Optimized) =================
 
     private void injectCityListScript(WebView view) {
-        // Logic remains largely the same, optimized for readability
         String js = "javascript:(function(){" +
                 "  function simulateRealTap(element) {" +
                 "      if(!element) return;" +
@@ -638,7 +669,6 @@ public class MainActivity extends Activity {
     }
 
     private void injectCinemaDataScriptFast(WebView view) {
-        // Optimized: Uses MutationObserver to detect content changes immediately
         String js =
                 "(function(){" +
                         "   if(window.hasExtracted) return;" +
@@ -669,8 +699,6 @@ public class MainActivity extends Activity {
 
         view.evaluateJavascript(js, null);
     }
-
-    // === Inner Static Classes ===
 
     static class City {
         final String name;

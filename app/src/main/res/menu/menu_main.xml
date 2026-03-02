@@ -4,4 +4,8 @@
         android:id="@+id/action_threads"
         android:title="Thread Count"
         android:showAsAction="never" />
+    <item
+        android:id="@+id/action_converter"
+        android:title="Rule Converter"
+        android:showAsAction="never" />
 </menu>

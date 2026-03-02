@@ -3,7 +3,6 @@ package com.treelang.films;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
@@ -101,7 +100,6 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         setContentView(R.layout.activity_main);
 
         initViews();
@@ -128,6 +126,10 @@ public class MainActivity extends Activity {
     public boolean onOptionsItemSelected(MenuItem item) {
         if (item.getItemId() == R.id.action_threads) {
             showThreadSelectionDialog();
+            return true;
+        } else if (item.getItemId()==R.id.action_converter) {
+            Intent intent =new Intent(this, ConverterActivity.class);
+            startActivity(intent);
             return true;
         }
         return super.onOptionsItemSelected(item);
@@ -237,11 +239,6 @@ public class MainActivity extends Activity {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 String url = request.getUrl().toString().toLowerCase();
-//                if (url.endsWith(".css") || url.endsWith(".woff") ||
-//                        url.endsWith(".ttf") || url.endsWith(".ico") ||
-//                        url.endsWith(".png") || url.endsWith(".jpg") || url.endsWith(".gif")) {
-//                    return new WebResourceResponse("text/plain", "utf-8", new ByteArrayInputStream("".getBytes()));
-//                }
                 if (url.contains("m.taopiaopiao.com") || url.contains("g.alicdn.com")) {
                     return super.shouldInterceptRequest(view, request);
                 }

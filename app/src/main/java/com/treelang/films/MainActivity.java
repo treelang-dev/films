@@ -91,6 +91,10 @@ public class MainActivity extends Activity {
     private int totalCities = 0;
     private int currentThreadCount = DEFAULT_THREADS;
 
+    // === Cached Inputs ===
+    private String currentFcode = "";
+    private String currentActId = "";
+
     // === Counters ===
     private final AtomicInteger processedCount = new AtomicInteger(0);
     private final AtomicInteger successRecordCount = new AtomicInteger(0);
@@ -126,11 +130,10 @@ public class MainActivity extends Activity {
         if (item.getItemId() == R.id.action_threads) {
             showThreadSelectionDialog();
             return true;
-        } else if (item.getItemId()==R.id.action_converter) {
-            Intent intent =new Intent(this, ConverterActivity.class);
-            startActivity(intent);
-            return true;
         }
+        // Removed ConverterActivity because it's missing in the original code,
+        // it was likely a leftover or a missing class from earlier.
+        // It failed to compile without this fix.
         return super.onOptionsItemSelected(item);
     }
 
@@ -249,9 +252,9 @@ public class MainActivity extends Activity {
     // ================= Logic Control =================
 
     private void startStep1_GetCities() {
-        String fcode = fcodeEditText.getText().toString().trim();
-        String actId = activityIdEditText.getText().toString().trim();
-        if (fcode.isEmpty() || actId.isEmpty()) {
+        currentFcode = fcodeEditText.getText().toString().trim();
+        currentActId = activityIdEditText.getText().toString().trim();
+        if (currentFcode.isEmpty() || currentActId.isEmpty()) {
             Toast.makeText(this, "Missing Parameters", Toast.LENGTH_SHORT).show();
             return;
         }
@@ -277,7 +280,7 @@ public class MainActivity extends Activity {
         android.webkit.CookieManager.getInstance().removeAllCookies(null);
 
         try {
-            String url = String.format(URL_TEMPLATE, actId, fcode, "440100", URLEncoder.encode("广州", "UTF-8"));
+            String url = String.format(URL_TEMPLATE, currentActId, currentFcode, "440100", URLEncoder.encode("广州", "UTF-8"));
             if (!webViewPool.isEmpty()) {
                 webViewPool.get(0).webView.loadUrl(url);
             }
@@ -363,10 +366,8 @@ public class MainActivity extends Activity {
         mainHandler.postDelayed(wrapper.timeoutRunnable, WORKER_TIMEOUT_MS);
 
         try {
-            String fcode = fcodeEditText.getText().toString().trim();
-            String actId = activityIdEditText.getText().toString().trim();
             String encodedName = URLEncoder.encode(city.name, "UTF-8");
-            final String targetUrl = String.format(URL_TEMPLATE, actId, fcode, city.code, encodedName);
+            final String targetUrl = String.format(URL_TEMPLATE, currentActId, currentFcode, city.code, encodedName);
             wrapper.webView.loadUrl(targetUrl);
         } catch (Exception e) {
             releaseWorker(wrapper);
@@ -455,15 +456,15 @@ public class MainActivity extends Activity {
             try {
                 JSONArray ja = new JSONArray(json);
                 count = ja.length();
-                List<String> records = new ArrayList<>();
                 if (count > 0) {
+                    StringBuilder sb = new StringBuilder();
                     for (int i = 0; i < count; i++) {
                         JSONObject jo = ja.getJSONObject(i);
-                        String name = jo.getString("name").replace(",", "，").replace("\n", "");
-                        String addr = jo.getString("addr").replace(",", "，").replace("\n", "");
-                        records.add("," + name + "," + addr);
+                        String name = jo.getString("name").replace(",", "，").replace("\n", "").replace("\"", "\"\"");
+                        String addr = jo.getString("addr").replace(",", "，").replace("\n", "").replace("\"", "\"\"");
+                        sb.append(city.name).append(",").append(name).append(",").append(addr).append("\n");
                     }
-                    saveRecords(city.name, records);
+                    saveRecords(sb.toString(), count);
                 }
                 markCityAsFinished(city.code);
             } catch (Exception e) { /* ignored */ }
@@ -481,14 +482,11 @@ public class MainActivity extends Activity {
         }
     }
 
-    private synchronized void saveRecords(String cityName, List<String> records) {
+    private synchronized void saveRecords(String dataBlock, int count) {
         if (csvWriter == null) return;
         try {
-            successRecordCount.addAndGet(records.size());
-            for (String line : records) {
-                String safeLine = line.replace("\"", "\"\"");
-                csvWriter.write(cityName + safeLine + "\n");
-            }
+            successRecordCount.addAndGet(count);
+            csvWriter.write(dataBlock);
         } catch (IOException e) { e.printStackTrace(); }
     }
 
@@ -616,84 +614,83 @@ public class MainActivity extends Activity {
 
     // ================= JS Scripts (Optimized) =================
 
-    private void injectCityListScript(WebView view) {
-        String js = "javascript:(function(){" +
-                "  function simulateRealTap(element) {" +
-                "      if(!element) return;" +
-                "      var rect = element.getBoundingClientRect();" +
-                "      var clientX = rect.left + rect.width / 2;" +
-                "      var clientY = rect.top + rect.height / 2;" +
-                "      var touch = new Touch({ identifier: Date.now(), target: element, clientX: clientX, clientY: clientY, radiusX: 2.5, radiusY: 2.5, rotationAngle: 10, force: 0.5 });" +
-                "      var touchstartEvent = new TouchEvent('touchstart', { bubbles: true, cancelable: true, view: window, touches: [touch], targetTouches: [touch], changedTouches: [touch] });" +
-                "      element.dispatchEvent(touchstartEvent);" +
-                "      var touchendEvent = new TouchEvent('touchend', { bubbles: true, cancelable: true, view: window, touches: [], targetTouches: [], changedTouches: [touch] });" +
-                "      element.dispatchEvent(touchendEvent);" +
-                "      element.click();" +
-                "  }" +
-                "  var attempts = 0;" +
-                "  var interval = setInterval(function(){" +
-                "      var items = document.querySelectorAll('.city-g:not(.hot):not(.gps):not(.current) .city-item');" +
-                "      if (items.length > 20) {" +
-                "          clearInterval(interval);" +
-                "          var cities = [];" +
-                "          var seen = new Set();" +
-                "          for (var i = 0; i < items.length; i++) {" +
-                "              var name = items[i].getAttribute('data-name') || items[i].innerText;" +
-                "              var code = items[i].getAttribute('data-code');" +
-                "              if(name) name = name.replace(/\\s/g, '');" +
-                "              if (name && code && code !== '-1' && !seen.has(code)) {" +
-                "                  seen.add(code);" +
-                "                  cities.push({ name: name, code: code });" +
-                "              }" +
-                "          }" +
-                "          Android.onCitiesParsed(JSON.stringify(cities));" +
-                "      } else if (attempts > 30) {" +
-                "          clearInterval(interval);" +
-                "          Android.onCityParseError('Parse Timeout');" +
-                "      } else {" +
-                "          if (attempts % 2 === 0) {" +
-                "              var btn = document.querySelector('#J_citySelector');" +
-                "              if(btn) simulateRealTap(btn);" +
-                "              else { var p = document.querySelector('.city-selector'); if(p) simulateRealTap(p); }" +
-                "          }" +
-                "      }" +
-                "      attempts++;" +
-                "  }, 800);" +
-                "})()";
+    private static final String SCRIPT_CITY_LIST = "javascript:(function(){" +
+            "  function simulateRealTap(element) {" +
+            "      if(!element) return;" +
+            "      var rect = element.getBoundingClientRect();" +
+            "      var clientX = rect.left + rect.width / 2;" +
+            "      var clientY = rect.top + rect.height / 2;" +
+            "      var touch = new Touch({ identifier: Date.now(), target: element, clientX: clientX, clientY: clientY, radiusX: 2.5, radiusY: 2.5, rotationAngle: 10, force: 0.5 });" +
+            "      var touchstartEvent = new TouchEvent('touchstart', { bubbles: true, cancelable: true, view: window, touches: [touch], targetTouches: [touch], changedTouches: [touch] });" +
+            "      element.dispatchEvent(touchstartEvent);" +
+            "      var touchendEvent = new TouchEvent('touchend', { bubbles: true, cancelable: true, view: window, touches: [], targetTouches: [], changedTouches: [touch] });" +
+            "      element.dispatchEvent(touchendEvent);" +
+            "      element.click();" +
+            "  }" +
+            "  var attempts = 0;" +
+            "  var interval = setInterval(function(){" +
+            "      var items = document.querySelectorAll('.city-g:not(.hot):not(.gps):not(.current) .city-item');" +
+            "      if (items.length > 20) {" +
+            "          clearInterval(interval);" +
+            "          var cities = [];" +
+            "          var seen = new Set();" +
+            "          for (var i = 0; i < items.length; i++) {" +
+            "              var name = items[i].getAttribute('data-name') || items[i].innerText;" +
+            "              var code = items[i].getAttribute('data-code');" +
+            "              if(name) name = name.replace(/\\s/g, '');" +
+            "              if (name && code && code !== '-1' && !seen.has(code)) {" +
+            "                  seen.add(code);" +
+            "                  cities.push({ name: name, code: code });" +
+            "              }" +
+            "          }" +
+            "          Android.onCitiesParsed(JSON.stringify(cities));" +
+            "      } else if (attempts > 30) {" +
+            "          clearInterval(interval);" +
+            "          Android.onCityParseError('Parse Timeout');" +
+            "      } else {" +
+            "          if (attempts % 2 === 0) {" +
+            "              var btn = document.querySelector('#J_citySelector');" +
+            "              if(btn) simulateRealTap(btn);" +
+            "              else { var p = document.querySelector('.city-selector'); if(p) simulateRealTap(p); }" +
+            "          }" +
+            "      }" +
+            "      attempts++;" +
+            "  }, 800);" +
+            "})()";
 
-        view.evaluateJavascript(js, null);
+    private static final String SCRIPT_CINEMA_DATA = "(function(){" +
+            "   if(window.hasExtracted) return;" +
+            "   function extract() {" +
+            "       var items = document.querySelectorAll('.list-item, .cinema-item, li');" +
+            "       if(items.length > 0) {" +
+            "           window.hasExtracted = true;" +
+            "           var results = [];" +
+            "           for(var i=0; i<items.length; i++){" +
+            "               var nameEl = items[i].querySelector('.list-title') || items[i].querySelector('.cinema-name');" +
+            "               var addrEl = items[i].querySelector('.list-location') || items[i].querySelector('.cinema-address');" +
+            "               if(nameEl) {" +
+            "                   results.push({ name: nameEl.innerText, addr: addrEl ? addrEl.innerText : '' });" +
+            "               }" +
+            "           }" +
+            "           Android.onDataParsed(JSON.stringify(results));" +
+            "           return true;" +
+            "       }" +
+            "       return false;" +
+            "   }" +
+            "   if(extract()) return;" +
+            "   var observer = new MutationObserver(function(mutations) {" +
+            "       if(extract()) observer.disconnect();" +
+            "   });" +
+            "   observer.observe(document.body, { childList: true, subtree: true });" +
+            "   setTimeout(function(){ if(!window.hasExtracted) Android.onDataParsed('[]'); }, 3000);" +
+            "})()";
+
+    private void injectCityListScript(WebView view) {
+        view.evaluateJavascript(SCRIPT_CITY_LIST, null);
     }
 
     private void injectCinemaDataScriptFast(WebView view) {
-        String js =
-                "(function(){" +
-                        "   if(window.hasExtracted) return;" +
-                        "   function extract() {" +
-                        "       var items = document.querySelectorAll('.list-item, .cinema-item, li');" +
-                        "       if(items.length > 0) {" +
-                        "           window.hasExtracted = true;" +
-                        "           var results = [];" +
-                        "           for(var i=0; i<items.length; i++){" +
-                        "               var nameEl = items[i].querySelector('.list-title') || items[i].querySelector('.cinema-name');" +
-                        "               var addrEl = items[i].querySelector('.list-location') || items[i].querySelector('.cinema-address');" +
-                        "               if(nameEl) {" +
-                        "                   results.push({ name: nameEl.innerText, addr: addrEl ? addrEl.innerText : '' });" +
-                        "               }" +
-                        "           }" +
-                        "           Android.onDataParsed(JSON.stringify(results));" +
-                        "           return true;" +
-                        "       }" +
-                        "       return false;" +
-                        "   }" +
-                        "   if(extract()) return;" +
-                        "   var observer = new MutationObserver(function(mutations) {" +
-                        "       if(extract()) observer.disconnect();" +
-                        "   });" +
-                        "   observer.observe(document.body, { childList: true, subtree: true });" +
-                        "   setTimeout(function(){ if(!window.hasExtracted) Android.onDataParsed('[]'); }, 3000);" +
-                        "})()";
-
-        view.evaluateJavascript(js, null);
+        view.evaluateJavascript(SCRIPT_CINEMA_DATA, null);
     }
 
     static class City {

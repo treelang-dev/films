@@ -40,4 +40,5 @@ android {
 }
 
 dependencies {
+    implementation libs.fastexcel
 }

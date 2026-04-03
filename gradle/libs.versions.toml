@@ -1,7 +1,9 @@
 [versions]
-agp = "9.0.0"
+agp = "9.1.0"
+fastexcel = "0.20.0"
 
 [libraries]
+fastexcel = { group = "org.dhatim", name = "fastexcel", version.ref = "fastexcel" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

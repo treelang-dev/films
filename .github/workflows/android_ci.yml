@@ -37,8 +37,6 @@ jobs:
           path: 'keystore-repo'
           ref: 'main'
 
-      # ... (后续所有步骤都保持不变) ...
-
       - name: Set up JDK 17
         uses: actions/setup-java@v5
         with:
@@ -61,12 +59,21 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: ./gradlew assembleRelease
 
-      - name: Create Release Draft
+      - name: Create Release Draft (using GitHub CLI)
         if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch')
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name || format('manual-{0}', github.run_id) }}
-          name: ${{ github.ref_name || 'Manual Release' }}
-          draft: true
-          generate_release_notes: true
-          files: app/build/outputs/apk/release/*.apk
+        env:
+          # 必须提供 Token，GitHub CLI 才能拥有创建 Release 的权限
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 1. 定义 Tag 名称和 Release 标题
+          TAG_NAME="${{ github.ref_name || format('manual-{0}', github.run_id) }}"
+          RELEASE_NAME="${{ github.ref_name || 'Manual Release' }}"
+          
+          # 2. 执行官方 gh 命令
+          # --title: 指定标题
+          # --draft: 标记为草稿状态
+          # --generate-notes: 自动触发并读取你的 .github/release.yml 生成日志
+          gh release create "$TAG_NAME" app/build/outputs/apk/release/*.apk \
+            --title "$RELEASE_NAME" \
+            --draft \
+            --generate-notes

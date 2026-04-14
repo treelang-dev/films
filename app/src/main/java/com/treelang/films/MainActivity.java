@@ -677,7 +677,9 @@ public class MainActivity extends Activity {
                         "               var nameEl = items[i].querySelector('.list-title') || items[i].querySelector('.cinema-name');" +
                         "               var addrEl = items[i].querySelector('.list-location') || items[i].querySelector('.cinema-address');" +
                         "               if(nameEl) {" +
-                        "                   results.push({ name: nameEl.innerText, addr: addrEl ? addrEl.innerText : '' });" +
+                        "                   var nm = (nameEl.innerText || nameEl.textContent || '').trim();" +
+                        "                   var ad = addrEl ? (addrEl.innerText || addrEl.textContent || '').trim() : '';" +
+                        "                   if(nm) results.push({ name: nm, addr: ad });" +
                         "               }" +
                         "           }" +
                         "           Android.onDataParsed(JSON.stringify(results));" +

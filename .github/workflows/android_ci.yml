@@ -22,10 +22,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Public Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@main
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@main
         with:
           java-version: '17'
           distribution: 'temurin'
@@ -39,7 +39,7 @@ jobs:
 
       # 可选优化：保留 Debug 构建产物，方便 PR 阶段下载测试
       - name: Upload Debug Artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@main
         with:
           name: app-debug
           path: app/build/outputs/apk/debug/*.apk
@@ -58,13 +58,13 @@ jobs:
 
     steps:
       - name: Checkout Public Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@main
 
       - name: Configure Git for SSH
         run: git config --global url."git@github.com:".insteadOf "https://github.com/"
 
       - name: Checkout Shared Keystore Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@main
         with:
           repository: 'treelang-dev/shared-android-keystore'
           ssh-key: ${{ secrets.KEYSTORE_REPO_DEPLOY_KEY }}
@@ -72,7 +72,7 @@ jobs:
           ref: 'main'
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@main
         with:
           java-version: '17'
           distribution: 'temurin'
@@ -91,7 +91,7 @@ jobs:
 
       # 即使不创建 Release 也可以把发版的包存一份 Artifact，防止 Release 创建失败导致包丢失
       - name: Upload Release Artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@main
         with:
           name: app-release
           path: app/build/outputs/apk/release/*.apk

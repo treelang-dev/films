@@ -5,15 +5,15 @@ plugins {
 android {
     namespace = 'com.treelang.films'
     compileSdk {
-        version = release(36)
+        version = release(37)
     }
 
     defaultConfig {
         applicationId "com.treelang.films"
         minSdk 28
-        targetSdk 36
-        versionCode 260302
-        versionName '1.0.2'
+        targetSdk 37
+        versionCode 260415
+        versionName '1.0.3'
     }
     signingConfigs {
         release {
@@ -29,7 +29,8 @@ android {
     buildTypes {
         release {
             signingConfig signingConfigs.release
-            minifyEnabled = false
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }

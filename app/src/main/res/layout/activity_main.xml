@@ -30,7 +30,7 @@
                 android:id="@+id/activityIdEditText"
                 android:layout_width="match_parent"
                 android:layout_height="36dp"
-                android:text="1714655"
+                android:text=""
                 android:inputType="number"
                 android:padding="4dp"/>
         </LinearLayout>
@@ -50,7 +50,7 @@
                 android:id="@+id/fcodeEditText"
                 android:layout_width="match_parent"
                 android:layout_height="36dp"
-                android:text="2CRGVWAC799"
+                android:text=""
                 android:padding="4dp"/>
         </LinearLayout>
     </LinearLayout>

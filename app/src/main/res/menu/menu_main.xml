@@ -1,6 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
     <item
+        android:id="@+id/action_bookmarks"
+        android:title="收藏夹"
+        android:showAsAction="never" />
+    <item
+        android:id="@+id/action_login"
+        android:title="Get Params (Login)"
+        android:showAsAction="never" />
+    <item
         android:id="@+id/action_threads"
         android:title="Thread Count"
         android:showAsAction="never" />

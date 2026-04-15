@@ -27,6 +27,7 @@ public class ConverterActivity extends Activity {
     // 定义用于 onActivityResult 的 Request Code
     private static final int REQUEST_CODE_INPUT = 1002;
     private static final int REQUEST_CODE_SAVE = 1003;
+    private static final String CONV_PREFS = "ConverterPrefs";
 
     private TextView tvRuleStatus, tvInputStatus, tvLog;
     private Button btnGenerate;
@@ -61,8 +62,15 @@ public class ConverterActivity extends Activity {
 
         btnSelectRule.setOnClickListener(v -> showRuleSelectionDialog());
         btnSelectInput.setOnClickListener(v -> openFilePicker());
-
         btnGenerate.setOnClickListener(v -> processFiles());
+
+        // Restore last selected rule
+        String lastRule = getSharedPreferences(CONV_PREFS, MODE_PRIVATE).getString("lastRule", null);
+        if (lastRule != null) {
+            ruleAssetFile = lastRule;
+            tvRuleStatus.setText("已选择：" + (lastRule.contains("Mangguo") ? "芒果规则" : "哈哈规则"));
+            checkReady();
+        }
     }
 
     @Override
@@ -89,7 +97,7 @@ public class ConverterActivity extends Activity {
             Uri uri = data.getData();
             if (requestCode == REQUEST_CODE_INPUT) {
                 inputUri = uri;
-                tvInputStatus.setText("已选择输入文件");
+                tvInputStatus.setText("已选择：" + getFileName(uri));
                 checkReady();
             } else if (requestCode == REQUEST_CODE_SAVE) {
                 saveDataToFile(uri);
@@ -114,10 +122,14 @@ public class ConverterActivity extends Activity {
                 .setPositiveButton("Confirm", (dialog, which) -> {
                     if (tempCheckedItem[0] == 0) {
                         ruleAssetFile = "Rules_Mangguo.csv";
-                        tvRuleStatus.setText("已选择: 芒果规则");
+                        tvRuleStatus.setText("已选择：芒果规则");
                     } else if (tempCheckedItem[0] == 1) {
                         ruleAssetFile = "Rules_Haha.csv";
-                        tvRuleStatus.setText("已选择: 哈哈规则");
+                        tvRuleStatus.setText("已选择：哈哈规则");
+                    }
+                    if (ruleAssetFile != null) {
+                        getSharedPreferences(CONV_PREFS, MODE_PRIVATE).edit()
+                                .putString("lastRule", ruleAssetFile).apply();
                     }
                     checkReady();
                 })
@@ -127,6 +139,15 @@ public class ConverterActivity extends Activity {
 
     private void checkReady() {
         btnGenerate.setEnabled(ruleAssetFile != null && inputUri != null);
+    }
+
+    private String getFileName(Uri uri) {
+        try (android.database.Cursor cursor = getContentResolver().query(
+                uri, new String[]{android.provider.OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) return cursor.getString(0);
+        } catch (Exception ignored) {}
+        String seg = uri.getLastPathSegment();
+        return seg != null ? seg : "未知文件";
     }
 
     private void appendLog(final String msg) {
@@ -173,9 +194,9 @@ public class ConverterActivity extends Activity {
                 return;
             }
 
-            // 2. 读取工作日影院并匹配
-            int totalInput = 0;
-            int matchCount = 0;
+                int totalInput = 0;
+                int matchCount = 0;
+                List<String> failedMatches = new ArrayList<>();
 
             try (InputStream inputIs = getContentResolver().openInputStream(inputUri);
                     BufferedReader inputReader = new BufferedReader(
@@ -204,13 +225,16 @@ public class ConverterActivity extends Activity {
                             matchedCodes.add(cinemaDict.get(cinemaName));
                             matchCount++;
                         } else {
-                            appendLog("⚠️ 匹配失败: " + cinemaName);
+                            failedMatches.add(cinemaName);
                         }
                     }
                 }
 
                 String resultMsg = "匹配完成！读取: " + totalInput + " 家，成功匹配: " + matchCount + " 家。";
                 appendLog(resultMsg);
+                if (!failedMatches.isEmpty()) {
+                    appendLog("⚠️ 匹配失败 " + failedMatches.size() + " 家：" + android.text.TextUtils.join("、", failedMatches));
+                }
 
                 if (matchCount > 0) {
                     // 3. 触发系统保存文件操作

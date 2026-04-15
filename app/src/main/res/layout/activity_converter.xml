@@ -1,78 +1,75 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-android:layout_width="match_parent"
-android:layout_height="match_parent"
-android:orientation="vertical"
-android:fitsSystemWindows="true"
-android:layout_margin="16dp"
-android:padding="16dp">
-    <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:fitsSystemWindows="true"
+    android:padding="20dp">
+
+    <TextView
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="vertical"
-        android:padding="20dp"
-        android:gravity="center_horizontal">
+        android:layout_height="wrap_content"
+        android:text="报价生成工具"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:gravity="center"
+        android:layout_marginBottom="24dp"/>
+
+    <!-- Step 1: Select Rule -->
+    <Button
+        android:id="@+id/btn_select_rule"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="1. 选择规则" />
+
+    <TextView
+        android:id="@+id/tv_rule_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="未选择"
+        android:textColor="#888888"
+        android:layout_marginBottom="16dp"/>
+
+    <!-- Step 2: Select Input CSV -->
+    <Button
+        android:id="@+id/btn_select_input"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="2. 选择工作日影院 CSV" />
+
+    <TextView
+        android:id="@+id/tv_input_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="未选择"
+        android:textColor="#888888"
+        android:layout_marginBottom="16dp"/>
+
+    <!-- Step 3: Generate -->
+    <Button
+        android:id="@+id/btn_generate"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="3. 生成并保存报价列表"
+        android:backgroundTint="#4CAF50"
+        android:textColor="#FFFFFF"
+        android:enabled="false"/>
+
+    <!-- Log area -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="20dp">
 
         <TextView
+            android:id="@+id/tv_log"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="芒果报价 CSV 生成工具"
-            android:textSize="24sp"
-            android:textStyle="bold"
-            android:gravity="center"
-            android:layout_marginBottom="30dp"/>
-
-        <Button
-            android:id="@+id/btn_select_rule"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="1. 选择规则" />
-
-        <TextView
-            android:id="@+id/tv_rule_status"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="未选择"
-            android:textColor="#888888"
-            android:layout_marginBottom="20dp"/>
-
-        <Button
-            android:id="@+id/btn_select_input"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="2. 选择【工作日影院.csv】" />
-
-        <TextView
-            android:id="@+id/tv_input_status"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="未选择"
-            android:textColor="#888888"
-            android:layout_marginBottom="20dp"/>
-
-        <Button
-            android:id="@+id/btn_generate"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="3. 生成并保存报价列表"
-            android:backgroundTint="#4CAF50"
-            android:textColor="#FFFFFF"
-            android:enabled="false"/>
-
-        <ScrollView
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:layout_marginTop="20dp">
-
-            <TextView
-                android:id="@+id/tv_log"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="运行日志：\n"
-                android:textSize="14sp"/>
-        </ScrollView>
-
-    </LinearLayout>
+            android:text="运行日志：\n"
+            android:textSize="13sp"
+            android:lineSpacingMultiplier="1.3"
+            android:fontFamily="monospace"/>
+    </ScrollView>
 
 </LinearLayout>

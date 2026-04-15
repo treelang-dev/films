@@ -49,6 +49,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Queue;
 import java.util.Set;
+import java.util.Collections;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -56,11 +59,12 @@ public class MainActivity extends Activity {
 
     // === Constants ===
     private static final int REQUEST_CODE_SAVE_FILE = 101;
+    private static final int REQUEST_CODE_LOGIN = 102;
     private static final String PREFS_NAME = "CrawlerPrefs";
     private static final String URL_TEMPLATE = "https://m.taopiaopiao.com/movies/coupons/applicative-cinemas.html?activityid=%s&fcode=%s&citycode=%s&cityname=%s";
 
     // === Core Configuration ===
-    private static final long WORKER_TIMEOUT_MS = 10000;
+    private static final long WORKER_TIMEOUT_MS = 20000;
     private static final int MAX_RETRY_COUNT = 3;
     private static final int DEFAULT_THREADS = 4;
     private static final int MAX_THREADS = 4;
@@ -95,6 +99,8 @@ public class MainActivity extends Activity {
     private final AtomicInteger processedCount = new AtomicInteger(0);
     private final AtomicInteger successRecordCount = new AtomicInteger(0);
     private final AtomicInteger activeWorkers = new AtomicInteger(0);
+    // City name → cinema count, used for the result summary dialog
+    private final Map<String, Integer> cityResultMap = new ConcurrentHashMap<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -123,11 +129,18 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
-        if (item.getItemId() == R.id.action_threads) {
+        if (item.getItemId() == R.id.action_bookmarks) {
+            showBookmarkDialog();
+            return true;
+        } else if (item.getItemId() == R.id.action_login) {
+            Intent intent = new Intent(this, LoginActivity.class);
+            startActivityForResult(intent, REQUEST_CODE_LOGIN);
+            return true;
+        } else if (item.getItemId() == R.id.action_threads) {
             showThreadSelectionDialog();
             return true;
-        } else if (item.getItemId()==R.id.action_converter) {
-            Intent intent =new Intent(this, ConverterActivity.class);
+        } else if (item.getItemId() == R.id.action_converter) {
+            Intent intent = new Intent(this, ConverterActivity.class);
             startActivity(intent);
             return true;
         }
@@ -263,6 +276,7 @@ public class MainActivity extends Activity {
         finishedCityCodes.clear();
         processedCityCodes.clear();
         failedCities.clear();
+        cityResultMap.clear();
 
         // 既然是全新开始，也要清除 SharedPreferences 里的记录
         SharedPreferences sp = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
@@ -401,6 +415,9 @@ public class MainActivity extends Activity {
         currentThreadCount = sp.getInt("threads", DEFAULT_THREADS);
         if (currentThreadCount > MAX_THREADS) currentThreadCount = MAX_THREADS;
         if (currentThreadCount < 1) currentThreadCount = 1;
+        // Restore last used activityid and fcode
+        activityIdEditText.setText(sp.getString("actId", ""));
+        fcodeEditText.setText(sp.getString("fcode", ""));
     }
 
     private void markCityAsFinished(String code) {
@@ -465,6 +482,7 @@ public class MainActivity extends Activity {
                     }
                     saveRecords(city.name, records);
                 }
+                if (count > 0) cityResultMap.put(city.name, count);
                 markCityAsFinished(city.code);
             } catch (Exception e) { /* ignored */ }
 
@@ -503,7 +521,7 @@ public class MainActivity extends Activity {
 
         startButton.setText("Start");
         startButton.setEnabled(true);
-        saveFileToUserDevice();
+        showResultSummary();
     }
 
     // 用户手动停止时调用 (强制重置)
@@ -556,6 +574,135 @@ public class MainActivity extends Activity {
         } catch (IOException e) { e.printStackTrace(); }
     }
 
+    // ================= Result Summary =================
+
+    private void showResultSummary() {
+        List<Map.Entry<String, Integer>> sorted = new ArrayList<>(cityResultMap.entrySet());
+        Collections.sort(sorted, (a, b) -> b.getValue().compareTo(a.getValue()));
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("影院总数：").append(successRecordCount.get()).append(" 家\n");
+        sb.append("城市数：").append(cityResultMap.size()).append(" 个");
+        if (!failedCities.isEmpty())
+            sb.append("   超时：").append(failedCities.size()).append(" 个");
+        sb.append("\n\n🏆 Top 5 城市\n");
+        for (int i = 0; i < Math.min(5, sorted.size()); i++) {
+            sb.append(i + 1).append(". ").append(sorted.get(i).getKey())
+              .append(" (").append(sorted.get(i).getValue()).append("家)\n");
+        }
+        if (!failedCities.isEmpty()) {
+            sb.append("\n超时城市：");
+            for (City c : failedCities) sb.append(c.name).append(" ");
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("✅ 抓取完成")
+                .setMessage(sb.toString().trim())
+                .setCancelable(false)
+                .setPositiveButton("保存文件", (d, w) -> saveFileToUserDevice())
+                .setNegativeButton("关闭", (d, w) -> d.dismiss())
+                .show();
+    }
+
+    // ================= Bookmark Management =================
+
+    private static final String KEY_BOOKMARKS = "bookmarks";
+
+    private List<Bookmark> loadBookmarks() {
+        SharedPreferences sp = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        List<Bookmark> list = new ArrayList<>();
+        try {
+            JSONArray arr = new JSONArray(sp.getString(KEY_BOOKMARKS, "[]"));
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject o = arr.getJSONObject(i);
+                list.add(new Bookmark(o.getString("name"), o.getString("actId"), o.getString("fcode")));
+            }
+        } catch (Exception ignored) {}
+        return list;
+    }
+
+    private void saveBookmarks(List<Bookmark> list) {
+        JSONArray arr = new JSONArray();
+        for (Bookmark b : list) {
+            try {
+                JSONObject o = new JSONObject();
+                o.put("name", b.name); o.put("actId", b.actId); o.put("fcode", b.fcode);
+                arr.put(o);
+            } catch (Exception ignored) {}
+        }
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                .putString(KEY_BOOKMARKS, arr.toString()).apply();
+    }
+
+    private void showBookmarkDialog() {
+        List<Bookmark> bookmarks = loadBookmarks();
+        if (bookmarks.isEmpty()) {
+            showAddBookmarkDialog(new ArrayList<>());
+            return;
+        }
+        String[] labels = new String[bookmarks.size()];
+        for (int i = 0; i < bookmarks.size(); i++)
+            labels[i] = bookmarks.get(i).name + "  (ID: " + bookmarks.get(i).actId + ")";
+        new AlertDialog.Builder(this)
+                .setTitle("收藏夹")
+                .setItems(labels, (d, which) -> {
+                    Bookmark bm = bookmarks.get(which);
+                    activityIdEditText.setText(bm.actId);
+                    fcodeEditText.setText(bm.fcode);
+                    saveConfig();
+                    Toast.makeText(this, "已加载：" + bm.name, Toast.LENGTH_SHORT).show();
+                })
+                .setPositiveButton("保存当前参数", (d, w) -> showAddBookmarkDialog(bookmarks))
+                .setNeutralButton("管理", (d, w) -> showManageBookmarksDialog(bookmarks))
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    private void showAddBookmarkDialog(List<Bookmark> existing) {
+        String actId = activityIdEditText.getText().toString().trim();
+        String fcode = fcodeEditText.getText().toString().trim();
+        if (actId.isEmpty() || fcode.isEmpty()) {
+            Toast.makeText(this, "请先填写 Activity ID 和 FCode", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        EditText et = new EditText(this);
+        et.setHint("收藏名称，如：我的妈耶 8元券");
+        new AlertDialog.Builder(this)
+                .setTitle("保存到收藏夹")
+                .setView(et)
+                .setPositiveButton("保存", (d, w) -> {
+                    String name = et.getText().toString().trim();
+                    if (!name.isEmpty()) {
+                        existing.add(new Bookmark(name, actId, fcode));
+                        saveBookmarks(existing);
+                        Toast.makeText(this, "已收藏：" + name, Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    private void showManageBookmarksDialog(List<Bookmark> bookmarks) {
+        if (bookmarks.isEmpty()) {
+            Toast.makeText(this, "收藏夹为空", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String[] labels = new String[bookmarks.size()];
+        for (int i = 0; i < bookmarks.size(); i++) labels[i] = bookmarks.get(i).name;
+        boolean[] checked = new boolean[bookmarks.size()];
+        new AlertDialog.Builder(this)
+                .setTitle("管理收藏夹（勾选后删除）")
+                .setMultiChoiceItems(labels, checked, (d, which, isChecked) -> checked[which] = isChecked)
+                .setPositiveButton("删除选中", (d, w) -> {
+                    List<Bookmark> remaining = new ArrayList<>();
+                    for (int i = 0; i < bookmarks.size(); i++)
+                        if (!checked[i]) remaining.add(bookmarks.get(i));
+                    saveBookmarks(remaining);
+                    Toast.makeText(this, "已删除选中项", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
     // ================= Helper Methods =================
 
     private void log(final String msg) {
@@ -593,6 +740,13 @@ public class MainActivity extends Activity {
         if (requestCode == REQUEST_CODE_SAVE_FILE && resultCode == RESULT_OK && data != null) {
             Uri uri = data.getData();
             if (uri != null) copyFile(uri);
+        } else if (requestCode == REQUEST_CODE_LOGIN && resultCode == RESULT_OK && data != null) {
+            String actId = data.getStringExtra(LoginActivity.EXTRA_ACTIVITY_ID);
+            String fcode = data.getStringExtra(LoginActivity.EXTRA_FCODE);
+            if (actId != null) activityIdEditText.setText(actId);
+            if (fcode != null) fcodeEditText.setText(fcode);
+            saveConfig();
+            Toast.makeText(this, "参数已自动填入", Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -665,44 +819,62 @@ public class MainActivity extends Activity {
     }
 
     private void injectCinemaDataScriptFast(WebView view) {
+        // Key design:
+        // - collect() targets '.list-title/.cinema-name' directly (cinema-specific, not broad 'li')
+        //   so start() never fires early due to nav-bar <li> elements.
+        // - Uses closest() to find the enclosing container for the address element.
+        // - Scroll interval 400 ms, max 12 iterations (4.8 s max) inside 20 s timeout.
         String js =
                 "(function(){" +
-                        "   if(window.hasExtracted) return;" +
-                        "   function extract() {" +
-                        "       var items = document.querySelectorAll('.list-item, .cinema-item, li');" +
-                        "       if(items.length > 0) {" +
-                        "           window.hasExtracted = true;" +
-                        "           var results = [];" +
-                        "           for(var i=0; i<items.length; i++){" +
-                        "               var nameEl = items[i].querySelector('.list-title') || items[i].querySelector('.cinema-name');" +
-                        "               var addrEl = items[i].querySelector('.list-location') || items[i].querySelector('.cinema-address');" +
-                        "               if(nameEl) {" +
-                        "                   var nm = (nameEl.innerText || nameEl.textContent || '').trim();" +
-                        "                   var ad = addrEl ? (addrEl.innerText || addrEl.textContent || '').trim() : '';" +
-                        "                   if(nm) results.push({ name: nm, addr: ad });" +
-                        "               }" +
-                        "           }" +
-                        "           Android.onDataParsed(JSON.stringify(results));" +
-                        "           return true;" +
-                        "       }" +
-                        "       return false;" +
-                        "   }" +
-                        "   if(extract()) return;" +
-                        "   var observer = new MutationObserver(function(mutations) {" +
-                        "       if(extract()) observer.disconnect();" +
-                        "   });" +
-                        "   observer.observe(document.body, { childList: true, subtree: true });" +
-                        "   setTimeout(function(){ if(!window.hasExtracted) Android.onDataParsed('[]'); }, 3000);" +
-                        "})()";
+                "  if(window.__running) return;" +
+                "  window.__running = true;" +
+                "  function collect(){" +
+                "    var seen={}, out=[];" +
+                "    var nels=document.querySelectorAll('.list-title,.cinema-name');" +
+                "    for(var i=0;i<nels.length;i++){" +
+                "      var nm=(nels[i].innerText||nels[i].textContent||'').trim();" +
+                "      if(!nm||seen[nm]) continue;" +
+                "      seen[nm]=1;" +
+                "      var box=nels[i].closest('li')||nels[i].parentElement;" +
+                "      var aEl=box?(box.querySelector('.list-location')||box.querySelector('.cinema-address')):null;" +
+                "      var ad=aEl?(aEl.innerText||aEl.textContent||'').trim():'';" +
+                "      out.push({name:nm,addr:ad});" +
+                "    }" +
+                "    return out;" +
+                "  }" +
+                "  function done(r){window.__running=false;Android.onDataParsed(JSON.stringify(r));}" +
+                "  function loop(n,last){" +
+                "    var r=collect();" +
+                "    if((n>0&&r.length===last)||n>=12){done(r);return;}" +
+                "    window.scrollTo(0,document.body.scrollHeight);" +
+                "    setTimeout(function(){loop(n+1,r.length);},400);" +
+                "  }" +
+                // start() only fires when actual cinema name elements exist — not nav li elements
+                "  function start(){" +
+                "    if(document.querySelectorAll('.list-title,.cinema-name').length>0){loop(0,-1);return true;}" +
+                "    return false;" +
+                "  }" +
+                "  if(start()) return;" +
+                "  var ob=new MutationObserver(function(){if(start())ob.disconnect();});" +
+                "  ob.observe(document.body,{childList:true,subtree:true});" +
+                "  setTimeout(function(){ob.disconnect();if(window.__running)done([]);},1500);" +
+                "})()";
 
         view.evaluateJavascript(js, null);
     }
+
+
 
     static class City {
         final String name;
         final String code;
         int retryCount = 0;
         City(String name, String code) { this.name = name; this.code = code; }
+    }
+
+    static class Bookmark {
+        final String name, actId, fcode;
+        Bookmark(String n, String a, String f) { name = n; actId = a; fcode = f; }
     }
 
     static class WebViewWrapper {

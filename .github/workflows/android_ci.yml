@@ -1,36 +1,70 @@
-# 文件路径: .github/workflows/android_ci.yml
-
 name: Android CI/CD
 
 on:
   push:
-    branches: ["master"] # 或者 main
+    branches: ["master"]
     tags: ["v*.*.*"]
   pull_request:
-    branches: ["master"] # 或者 main
+    branches: ["master"]
   workflow_dispatch:
 
-jobs:
-  build_and_release:
-    runs-on: ubuntu-latest
+# 默认权限设为只读，提高安全性
+permissions:
+  contents: read
 
-    # v-- THE FINAL FIX IS HERE --v
-    # We explicitly grant the GITHUB_TOKEN write permissions for the "contents" of the repo.
-    # This is required for the action to be able to create a release.
+jobs:
+  # ==========================================
+  # Job 1: 日常 CI 检查 (仅编译 Debug, 验证代码)
+  # ==========================================
+  ci_checks:
+    # 仅在非 tag 的 push，以及 pull_request 时运行
+    if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/v')) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Public Repository
+        uses: actions/checkout@main
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@main
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle' # 开启 Gradle 缓存，大幅提升构建速度！
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build with Gradle (CI Check)
+        run: ./gradlew assembleDebug
+
+      # 可选优化：保留 Debug 构建产物，方便 PR 阶段下载测试
+      - name: Upload Debug Artifact
+        uses: actions/upload-artifact@main
+        with:
+          name: app-debug
+          path: app/build/outputs/apk/debug/*.apk
+
+  # ==========================================
+  # Job 2: 打包并发布 Release (仅打 Tag 或手动触发)
+  # ==========================================
+  build_release:
+    # 仅在打 tag 或者手动触发时运行
+    if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    
+    # 单独为发版 Job 授予写权限
     permissions:
       contents: write
 
     steps:
       - name: Checkout Public Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@main
 
       - name: Configure Git for SSH
-        if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch')
         run: git config --global url."git@github.com:".insteadOf "https://github.com/"
 
       - name: Checkout Shared Keystore Repository
-        if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch')
-        uses: actions/checkout@v5
+        uses: actions/checkout@main
         with:
           repository: 'treelang-dev/shared-android-keystore'
           ssh-key: ${{ secrets.KEYSTORE_REPO_DEPLOY_KEY }}
@@ -38,20 +72,16 @@ jobs:
           ref: 'main'
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@main
         with:
           java-version: '17'
           distribution: 'temurin'
+          cache: 'gradle'
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build with Gradle (CI Check)
-        if: (github.event_name != 'push' && !startsWith(github.ref, 'refs/tags/v')) && (github.event_name != 'workflow_dispatch')
-        run: ./gradlew assembleDebug
-
       - name: Build Release APK
-        if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch')
         env:
           CI: "true"
           ANDROID_KEY_STORE_PASSWORD: ${{ secrets.ANDROID_KEY_STORE_PASSWORD }}
@@ -59,20 +89,29 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: ./gradlew assembleRelease
 
+      # 即使不创建 Release 也可以把发版的包存一份 Artifact，防止 Release 创建失败导致包丢失
+      - name: Upload Release Artifact
+        uses: actions/upload-artifact@main
+        with:
+          name: app-release
+          path: app/build/outputs/apk/release/*.apk
+
       - name: Create Release Draft (using GitHub CLI)
-        if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch')
         env:
-          # 必须提供 Token，GitHub CLI 才能拥有创建 Release 的权限
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 1. 定义 Tag 名称和 Release 标题
-          TAG_NAME="${{ github.ref_name || format('manual-{0}', github.run_id) }}"
-          RELEASE_NAME="${{ github.ref_name || 'Manual Release' }}"
+          # 修复手动触发时的 Tag 名称逻辑
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            TAG_NAME="manual-run-${{ github.run_id }}"
+            RELEASE_NAME="Manual Build (${{ github.ref_name }} - ${{ github.run_id }})"
+          else
+            TAG_NAME="${{ github.ref_name }}"
+            RELEASE_NAME="Release ${{ github.ref_name }}"
+          fi
           
-          # 2. 执行官方 gh 命令
-          # --title: 指定标题
-          # --draft: 标记为草稿状态
-          # --generate-notes: 自动触发并读取你的 .github/release.yml 生成日志
+          echo "Creating Release with Tag: $TAG_NAME"
+          
+          # 执行官方 gh 命令
           gh release create "$TAG_NAME" app/build/outputs/apk/release/*.apk \
             --title "$RELEASE_NAME" \
             --draft \
